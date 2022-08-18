@@ -1,0 +1,71 @@
+name: "action-tests"
+on:
+  pull_request:
+  push:
+
+jobs:
+  # Run JS unit tests
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-20.04
+    env:
+      SHAWK_API_KEY: ${{ secrets.SHAWK_API_KEY }}
+    steps:
+    - uses: actions/checkout@v2
+    - run: npm install --only=dev
+    - run: npm run lint
+    - run: npm clean-install
+    - run: npm test
+
+  # Run a HawkScan with this Action
+  live-test:
+    name: Live Test
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - uses: ./
+        with:
+          apiKey: ${{ secrets.SHAWK_API_KEY }}
+          githubToken: ${{ github.token }}
+          environmentVariables: SHAWK_RESULTS_ENDPOINT, SHAWK_AUTH_ENDPOINT
+          configurationFiles: __tests__/stackhawk.yml
+          codeScanningAlerts: true
+
+    # Run a HawkScan with this Action
+  ajax-test:
+    name: Ajax Live Test
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - uses: ./
+        with:
+          apiKey: ${{ secrets.SHAWK_API_KEY }}
+          githubToken: ${{ github.token }}
+          environmentVariables: SHAWK_RESULTS_ENDPOINT, SHAWK_AUTH_ENDPOINT
+          configurationFiles: __tests__/stackhawk_spider.yml
+          codeScanningAlerts: true
+
+  # If there is a new version according to the .bumpversion.cfg file in the main branch, tag and release
+  release-new-version:
+    name: Release New Version
+    runs-on: ubuntu-20.04
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs:
+      - unit-tests
+      - live-test
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - name: Check Release Version
+        run: |
+          echo "RELEASE_VERSION=$(./scripts/version-check.sh)" >> $GITHUB_ENV
+      - name: Create Release
+        id: create_release
+        if: env.RELEASE_VERSION != ''
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ env.RELEASE_VERSION }}
+          release_name: HawkScan Action ${{ env.RELEASE_VERSION }}
